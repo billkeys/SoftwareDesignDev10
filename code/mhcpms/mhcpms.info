@@ -1,0 +1,4 @@
+; $ID$
+name = MHCPMS
+description = Mental Health Care Patient Management System
+core = 6.x

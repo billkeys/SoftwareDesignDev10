@@ -1,0 +1,2677 @@
+<?php
+
+function mhcpms_perm()
+{
+	return array('view_patient_data','enter_sql','generate_reports','report_death','request_change','pending_change','create_prescription','register_user_id');
+}
+
+function mhcpms_menu()
+{
+	global $user;
+	$items = array();
+
+        $items[] = array(
+		'path' => 'mhcpms/requestchange',
+		'title' => t('Request Change'),
+		'description' => t('Patient can request and enter changes to thier information'),
+		'callback' => 'drupal_get_form',
+		'callback arguments' => array('request_change_form'),
+		'access' => (user_access('request_change', $user) || $user->uid==1));
+
+	$items[] = array(
+		'path' => 'mhcpms/pendingchange',
+		'title' => t('Pending Changes'),
+		'description' => t('Doctors can deny or approve patient changes'),
+		'callback' => 'drupal_get_form',
+		'callback arguments' => array('pending_change_form'),
+		'access' => (user_access('pending_change', $user) || $user->uid==1));
+
+	$items[] = array(
+		'path' => 'mhcpms/patientdeath',
+		'title' => t('Report Patient Death'),
+		'description' => t('Enter the circumstances of a patient\'s death into the MHCPMS system'),
+		'callback' => 'drupal_get_form',
+		'callback arguments' => array('patient_death_form'),
+		'access' => (user_access('report_death', $user) || $user->uid==1));
+
+	$items[] = array(
+		'path' => 'mhcpms/prescriptions',
+		'title' => t('Create Prescriptions'),
+		'description' => t('Create patient prescriptions into the MHCPMS system'),
+		'callback' => 'drupal_get_form',
+		'callback arguments' => array('patient_prescription_form'),
+		'access' => (user_access('create_prescription', $user) || $user->uid==1));
+
+	$items[]= array(
+		'path' => 'mhcpms/sql',
+		'title' => t('SQL Entry Form'),
+		'description' => t('Manually enter SQL'),
+		'callback' => 'drupal_get_form',
+		'callback arguments' => array('sql_form'),
+		'access' => (user_access('enter_sql', $user) || $user->uid==1));
+
+	$items[]= array(
+		'path' => 'mhcpms/register',
+		'title' => t('Register User'),
+		'description' => t('Complete the registration of a patient or employee'),
+		'callback' => 'drupal_get_form',
+		'callback arguments' => array('register_user_id_form'),
+		'access' => (user_access('register_user_id', $user) || $user->uid==1));
+
+	return $items;
+}
+
+function sql_form($form_values = NULL) 
+{
+	$form = array();
+	$form['sql'] = array(
+		'#type' => 'textarea',
+		'#title' => t('Enter some SQL which you would like to execute.  This can make permanent changes to the database.'),
+		'#required' => TRUE,
+		'#cols' => 60,
+  		'#rows' => 10);
+
+	$form['submit'] = array(
+    		'#type' => 'submit',
+		'#value' => t('Submit'),
+	);
+
+  	return $form;
+}
+
+function sql_form_validate($formid, $form_values)
+{
+	$result = db_query($form_values['sql']);
+
+	if(!$result)
+		form_set_error('sql', t('SQL Error.  No changes saved.  Please try again.'));
+}
+
+function sql_form_submit($form_id, $form_values) {
+	dpm($form_values['sql']);
+
+	
+	$type = substr($form_values['sql'],0,1);
+	if($type == 's' || $type == 'S')
+	{
+		$result = db_query($form_values['sql']);
+		
+		
+		$i = 1;
+		while($row = db_fetch_array($result))
+		{
+			$table[$i] = $row;
+			$i++;
+		}
+		if($i > 1)
+		{
+			$header = array_keys($table[$i-1]);
+			drupal_set_message(theme_table($header, $table, array(), NULL));
+		}
+		else
+		{
+			dpm(t('No results found'));
+		}
+	}
+	else
+		dpm(t('Your changes have been processed'));
+}
+
+function request_change_form($form_values = NULL)
+{
+	global $user;
+	
+	if(!$form_values || ($form_values['phase'] == 4 && $form_values['confirm'] == 'N'))
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 1
+		);
+
+		$form['uid'] = array(
+			'#type' => 'hidden',
+			'#value' => $user->uid
+		);
+
+		$form['pid'] = array(
+			'#weight' => '-6',
+			'#type' => 'textfield',
+			'#title' => t('Please enter your patient ID'),
+			'#size' => 9,
+    			'#maxlength' => 9,
+			'#required' => TRUE,
+		);
+
+		$form['sumbit'] = array(
+			'#weight' => '10',
+			'#type' => 'submit',
+			'#value' => t('Continue')
+		);
+	
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 1)
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 2
+		);
+            	$form['type'] = array(
+		        	'#type' => 'radios',
+	 	  	        '#title' => t('Please select the type of change you want'),
+			        '#options' => array(
+				     'personal' => t('Personal Information'),
+				     'emergency' => t('Emergency Contact'),
+				     'medication' => t('Medication')
+			         ),
+			         '#default_value' => 'N'
+		);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+		$form['submit'] = array(
+    			'#type' => 'submit',
+			'#value' => t('Continue'),
+		);
+		
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+        if(($form_values['phase'] == 2 && $form_values['type']=='personal') || ($form_values['phase'] == 4 && $form_values['choice'] == 'N' && $form_values['type'] == 'personal'))
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 3
+		);
+        	
+  		$patient = getPatientPersonalInfo($form_values['pid']);
+		
+		$form['firstName'] = array(
+			'#type' => 'textfield',
+			'#title' => t('First Name'),
+			'#size' => 9,
+    			'#maxlength' => 9,
+			'#default_value' => $patient['firstName'],
+			'#required' => TRUE,
+		);
+		
+		$form['middleInitial'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Middle Initial'),
+			'#size' => 3,
+    			'#maxlength' => 3,
+			'#default_value' => $patient['middleInitial'],
+		);
+
+		$form['lastName'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Last Name'),
+			'#size' => 9,
+    			'#maxlength' => 9,
+			'#default_value' => $patient['lastName'],
+			'#required' => TRUE,
+		);
+
+			
+		$form['address'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Address'),
+			'#size' => 25,
+			'#default_value' => $patient['address'],
+			'#required' => TRUE,
+		);
+		
+		$form['city'] = array(
+			'#type' => 'textfield',
+			'#title' => t('City'), 
+			'#default_value' => $patient['city'],
+			'#size' => 10,
+			'#required' => TRUE,
+		);
+
+		$form['state'] = array(
+			'#type' => 'textfield',
+			'#title' => t('State'),
+			'#default_value' => $patient['state'],
+			'#required' => TRUE,
+			'#size' => 2,
+			'#maxlength' => 2
+		);
+			
+		$form['zip'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Zip Code'), 
+			'#default_value' => $patient['zip'],
+			'#required' => TRUE,
+			'#size' => 10,
+			'#maxlength' => 10
+			);
+
+		$form['primaryPhone'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Primary Phone Number'),
+			'#default_value' => $patient['primaryPhone'],
+			'#required' => TRUE,
+			'#size' => 10,
+			'#maxlength' => 10
+			);
+
+		$form['secondaryPhone'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Secondary Phone Number'),
+			'#default_value' => $patient['secondaryPhone'],
+			'#required' => TRUE,
+			'#size' => 10,
+			'#maxlength' => 10
+			);
+
+		$form['emailAddress'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Email Address'),
+			'#default_value' => $patient['emailAddress'],
+			'#required' => TRUE,
+			'#size' => 25,
+			'#maxlength' => 25
+			);
+
+		$form['maritalStatus'] = array(
+			'#type' => 'select',
+			'#title' => t('Marital Status'),
+			'#default_value' => $patient['maritalStatus'],
+			'#options' => array(
+				'S' => t('Single'),
+				'M' => t('Married'),
+				'W' => t('Widowed'),
+				'D' => t('Divorced'),
+				'P' => t('Separated')
+			),
+		);
+
+		$form['type'] = array(
+			'#type' => 'hidden',
+			'#value' => 'personal'
+		);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+		
+		$form['submit'] = array(
+    			'#type' => 'submit',
+			'#value' => t('Process'),
+		);
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if(($form_values['phase'] == 2 && $form_values['type']=='emergency') || ($form_values['phase'] == 4 && $form_values['choice'] == 'N' && $form_values['type'] == 'emergency'))
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 3
+		);
+        	
+  		$patient = getPatientEmergencyInfo($form_values['pid']);
+		
+		$form['firstName'] = array(
+			'#type' => 'textfield',
+			'#title' => t('First Name'),
+			'#size' => 9,
+    			'#maxlength' => 9,
+			'#default_value' => $patient['firstName'],
+			'#required' => TRUE,
+		);
+		
+		$form['middleInitial'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Middle Initial'),
+			'#size' => 3,
+    			'#maxlength' => 3,
+			'#default_value' => $patient['middleInitial'],
+		);
+
+		$form['lastName'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Last Name'),
+			'#size' => 9,
+    			'#maxlength' => 9,
+			'#default_value' => $patient['lastName'],
+			'#required' => TRUE,
+		);
+
+			
+		$form['address'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Address'),
+			'#size' => 25,
+			'#default_value' => $patient['address'],
+			'#required' => TRUE,
+		);
+		
+		$form['city'] = array(
+			'#type' => 'textfield',
+			'#title' => t('City'), 
+			'#default_value' => $patient['city'],
+			'#size' => 10,
+			'#required' => TRUE,
+		);
+
+		$form['state'] = array(
+			'#type' => 'textfield',
+			'#title' => t('State'),
+			'#default_value' => $patient['state'],
+			'#required' => TRUE,
+			'#size' => 2,
+			'#maxlength' => 2
+		);
+			
+		$form['zip'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Zip Code'), 
+			'#default_value' => $patient['zip'],
+			'#required' => TRUE,
+			'#size' => 10,
+			'#maxlength' => 10
+			);
+
+		$form['primaryPhone'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Primary Phone Number'),
+			'#default_value' => $patient['primaryPhone'],
+			'#required' => TRUE,
+			'#size' => 10,
+			'#maxlength' => 10
+			);
+
+		$form['secondaryPhone'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Secondary Phone Number'),
+			'#default_value' => $patient['secondaryPhone'],
+			'#required' => FALSE,
+			'#size' => 10,
+			'#maxlength' => 10
+			);
+
+		$form['emailAddress'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Email Address'),
+			'#default_value' => $patient['emailAddress'],
+			'#required' => FALSE,
+			'#size' => 25,
+			'#maxlength' => 25
+			);
+
+		$form['type'] = array(
+			'#type' => 'hidden',
+			'#value' => 'emergency'
+		);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+		
+		$form['submit'] = array(
+    			'#type' => 'submit',
+			'#value' => t('Process'),
+		);
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if(($form_values['phase'] == 2 && $form_values['type']=='medication') || ($form_values['phase'] == 4 && $form_values['choice'] == 'N' && $form_values['type'] == 'medication'))
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 3
+		);
+        	
+  		$drugs = getAllDrugs();
+		$opt = array();
+
+		for($i=1;$i<=sizeof($drugs);$i++)
+		{
+			$opt[$i] = $drugs[$i];
+		}
+		$default = array();
+		
+		$default[2] = 1; //print_r($default);
+
+		
+		$form['meds'] = array(
+			'#type' => 'checkboxes',
+			'#title' => t('Place a check beside the drugs you are currently taking'),
+			'#default_value' => $default,
+			'#options' => $opt,
+			'#required' => TRUE,
+			
+		);
+		
+		$form['type'] = array(
+			'#type' => 'hidden',
+			'#value' => 'medication'
+		);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+		
+		$form['submit'] = array(
+    			'#type' => 'submit',
+			'#value' => t('Process'),
+		);
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+	
+ 	if($form_values['phase'] == 3 && $form_values['type']=='personal')				//PERSONAL PHASE 3
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 4
+		);
+
+		$form['type'] = array(
+			'#type' => 'hidden',
+			'#value' => 'personal'
+		);
+
+		$form['confirm'] = array(
+			'#type' => 'radios',
+			'#title' => t('Is this the correct information'),
+			'#options' => array(
+				'Y' => t('Yes'),
+				'N' => t('No')
+			),
+			'#default_value' => 'N'
+		);
+
+		$form['firstName1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>First Name: </b>' .$form_values['firstName'],
+		);
+	
+		$form['middleInitial1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Middle Initial: </b>'.$form_values['middleInitial'],
+		);
+
+		$form['lastName1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Last Name: </b>'.$form_values['lastName'],
+		);
+
+		$form['address1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Address: </b>'.$form_values['address'],
+		);
+		
+		$form['city1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>City: </b>'.$form_values['city'],
+		);
+
+		$form['state1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>State: </b>'.$form_values['state'],
+		);
+			
+		$form['zip1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Zip: </b>'.$form_values['zip'],
+			);
+
+		$form['primaryPhone1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Primary Phone: </b>'.$form_values['primaryPhone'],
+			);
+
+		$form['secondaryPhone1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Secondary Phone: </b>'.$form_values['secondaryPhone'],
+			);
+
+		$form['emailAddress1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Email Address: </b>'.$form_values['emailAddress'],
+			);
+
+		$form['maritalStatus1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Marital Status: </b>'.decodeMaritalStatus($form_values['maritalStatus']).'<br><br><br>',
+		);
+
+		$form['firstName'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['firstName'],
+		);
+	
+		$form['middleInitial'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['middleInitial'],
+		);
+
+		$form['lastName'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['lastName'],
+		);
+
+		$form['address'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['address'],
+		);
+		
+		$form['city'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['city'],
+		);
+
+		$form['state'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['state'],
+		);
+			
+		$form['zip'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['zip'],
+			);
+
+		$form['primaryPhone'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['primaryPhone'],
+			);
+
+		$form['secondaryPhone'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['secondaryPhone'],
+			);
+
+		$form['emailAddress'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['emailAddress'],
+			);
+
+		$form['maritalStatus'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['maritalStatus'],
+			);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+		$form['submit'] = array(
+    			'#type' => 'submit',
+			'#value' => t('Process'),
+		);
+		
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 3 && $form_values['type']=='emergency')				//EMERGENCY PHASE 3
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 4
+		);
+
+		$form['type'] = array(
+			'#type' => 'hidden',
+			'#value' => 'emergency'
+		);
+
+		$form['confirm'] = array(
+			'#type' => 'radios',
+			'#title' => t('Is this the correct information'),
+			'#options' => array(
+				'Y' => t('Yes'),
+				'N' => t('No')
+			),
+			'#default_value' => 'N'
+		);
+
+		$form['firstName1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>First Name: </b>' .$form_values['firstName'],
+		);
+	
+		$form['middleInitial1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Middle Initial: </b>'.$form_values['middleInitial'],
+		);
+
+		$form['lastName1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Last Name: </b>'.$form_values['lastName'],
+		);
+
+		$form['address1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Address: </b>'.$form_values['address'],
+		);
+		
+		$form['city1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>City: </b>'.$form_values['city'],
+		);
+
+		$form['state1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>State: </b>'.$form_values['state'],
+		);
+			
+		$form['zip1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Zip: </b>'.$form_values['zip'],
+			);
+
+		$form['primaryPhone1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Primary Phone: </b>'.$form_values['primaryPhone'],
+			);
+
+		$form['secondaryPhone1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Secondary Phone: </b>'.$form_values['secondaryPhone'],
+			);
+
+		$form['emailAddress1'] = array(
+			'#type' => 'markup',
+			'#value' => '<br><b>Email Address: </b>'.$form_values['emailAddress'].'<br><br><br>',
+			);
+
+		$form['firstName'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['firstName'],
+		);
+	
+		$form['middleInitial'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['middleInitial'],
+		);
+
+		$form['lastName'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['lastName'],
+		);
+
+		$form['address'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['address'],
+		);
+		
+		$form['city'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['city'],
+		);
+
+		$form['state'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['state'],
+		);
+			
+		$form['zip'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['zip'],
+			);
+
+		$form['primaryPhone'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['primaryPhone'],
+			);
+
+		$form['secondaryPhone'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['secondaryPhone'],
+			);
+
+		$form['emailAddress'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['emailAddress'],
+			);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+		$form['submit'] = array(
+    			'#type' => 'submit',
+			'#value' => t('Process'),
+		);
+		
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 3 && $form_values['type'] == 'medication')
+	{	
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 4
+		);
+
+		$form['type'] = array(
+			'#type' => 'hidden',
+			'#value' => 'medication'
+		);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+		$form['confirm'] = array(
+			'#type' => 'radios',
+			'#title' => t('The drugs you checked are in bold.  Is the list complete?'),
+			'#options' => array(
+				'Y' => t('Yes'),
+				'N' => t('No')
+			),
+			'#default_value' => 'N'
+		);
+
+		$markup = getDrugMarkup($form_values['meds']);
+
+		$form['drugs'] = array(
+			'#type' => 'markup',
+			'#value' => $markup
+		);
+
+		$size = sizeof(getAllDrugs());
+
+		for($i=1;$i<=$size;$i++)
+		{
+			$form['drug'.$i] = array(
+				'#type' => 'hidden',
+				'#value' => $form_values['meds'][$i]
+			);
+		}
+
+		$form['submit'] = array(
+    			'#type' => 'submit',
+			'#value' => t('Process'),
+		);
+		
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+		
+	
+	if($form_values['phase'] == 4 && $form_values['confirm'] == 'Y' ) 
+        {
+		$form['message'] = array(
+			'#type' => 'item',
+			'#value' => t('Your request for change has been processed and now is waiting for approval')
+		);
+	}
+
+	return $form;
+}
+
+function request_change_form_validate($formid, $form_values)
+{
+	if($form_values['phase'] == 1)
+	{
+		if(!ctype_digit($form_values['pid']))
+		{
+			form_set_error('pid', t('Please enter numbers only'));
+		}
+		else if(!verifyUserIsPatient($form_values['pid'],$form_values['uid']))
+		{
+			form_set_error('pid', t('This is not your patient ID.  Please try again.'));
+		}
+	}
+}
+
+function request_change_form_submit($formid, $form_values)
+{
+	if($form_values['phase'] == 4 && $form_values['confirm'] == 'Y')
+	{
+		if($form_values['type'] == 'personal')
+			identifyPersonalChanges($form_values);
+		else if($form_values['type'] == 'emergency')
+			identifyEmergencyChanges($form_values);
+		else if($form_values['type'] == 'medication')
+			identifyMedicationChanges($form_values);
+	}
+}
+
+function pending_change_form($form_values = NULL)
+{
+	global $user;
+
+	$form = array();
+	if(!$form_values || ($form_values['phase'] == 3 && $form_values['change'] == 'N'))
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 1
+		);
+
+		$form['uid'] = array(
+			'#type' => 'hidden',
+			'#value' => $user->uid
+		);
+
+		$form['did'] = array(
+			'#weight' => '-6',
+			'#type' => 'textfield',
+			'#title' => t('Please enter your doctor ID'),
+			'#size' => 9,
+    			'#maxlength' => 9,
+			'#required' => TRUE,
+		);
+
+		$form['sumbit'] = array(
+			'#weight' => '10',
+			'#type' => 'submit',
+			'#value' => t('Continue')
+		);
+	
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 1)
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 2
+		);
+
+		$changes = retrievePendingChanges($form_values['did']);
+
+		if($changes)
+		{		
+			$html = "<table><tr><td>Change Number</td><td>Patient</td><td>Date</td><td>Field to Change</td><td>Type of change</td></tr>";
+
+			$info = array();
+
+			$size = sizeof($changes);
+
+			for($i=1;$i<$size;$i++)
+			{
+				$sql = $changes[$i]['SeQL'];
+				$pid = $changes[$i]['patientid'];
+				$eid = $changes[$i]['employeeid'];
+				
+				$type = parseTable($sql);
+
+				if($type == "patients")
+				{
+					$info[$i] = parsePersonalString($sql,$pid,$eid);
+					$opts = "<tr><td>".$i."<td>".getFullNameFromPID($changes[$i]['patientid'])."</td><td>".$changes[$i]['date']."</td><td>".$info[$i]['field']."</td><td>Personal Information</td></tr>";
+				}
+				if($type == "emergencyContacts")
+				{
+					$info[$i] = parsePersonalString($sql,$pid,$eid);
+					$opts = "<tr><td>".$i."<td>".getFullNameFromPID($changes[$i]['patientid'])."</td><td>".$changes[$i]['date']."</td><td>".$info[$i]['field']."</td><td>Emergency Contact</td></tr>";
+				}
+				if($type == "patientMeds")
+				{
+					$info[$i] = parseMedString($sql,$pid,$eid);
+					if($info[$i]['action'] == 0)
+					{
+						$action = 'Stopped Medication';
+					}
+					else
+					{
+						$action = 'New Medication';
+					}
+					$opts = "<tr><td>".$i."<td>".getFullNameFromPID($changes[$i]['patientid'])."</td><td>".$changes[$i]['date']."</td><td>Medications taken</td><td>".$action."</td></tr>";
+				}
+				$html = $html.$opts;
+			}
+
+			$form['counter'] = array(
+				'#type' => 'hidden',
+				'#value' => $size
+			);
+		
+			$form['change'] = array(
+				'#type' => 'textfield',
+				'#title' => t('Please enter the number of the change you wish to approve or reject'),
+				'#size' => 3,
+				'#required' => TRUE,
+			);
+
+			$form['table'] = array( '#type' => 'markup', '#value' => $html);
+
+			for($j=1;$j<$size;$j++)
+			{
+				$form['field'.$j] = array(
+					'#type' => 'hidden',
+					'#value'=>$info[$j]['field']);
+				$form['newvalue'.$j] = array(
+					'#type' => 'hidden',
+					'#value'=>$info[$j]['newvalue']);
+				$form['sql'.$j] = array(
+					'#type' => 'hidden',
+					'#value'=>$info[$j]['sql']);
+				$form['oldvalue'.$j] = array(
+					'#type' => 'hidden',
+					'#value'=>$info[$j]['oldvalue']);
+				$form['pid'.$j] = array(
+					'#type' => 'hidden',
+					'#value'=>$info[$j]['pid']);
+				$form['eid'.$j] = array(
+					'#type' => 'hidden',
+					'#value'=>$info[$j]['eid']);
+				$form['drugid'.$j] = array(
+					'#type' => 'hidden',
+					'#value'=>$info[$j]['drugid']);
+				$form['action'.$j] = array(
+					'#type' => 'hidden',
+					'#value'=>$info[$j]['action']);
+			}
+
+			$form['sumbit'] = array(
+				'#weight' => '10',
+				'#type' => 'submit',
+				'#value' => t('Continue')
+			);
+
+			
+	
+			$form['#multistep'] = TRUE;
+			$form['#redirect'] = FALSE;
+
+		}
+		else
+		{
+			drupal_set_message('You have no pending changes');
+		}
+		
+		
+
+			
+	}
+
+	if($form_values['phase'] == 2 && $form_values['counter'])
+	{
+		$number = $form_values['change'];
+		$table = parseTable($form_values['sql'.$number]);
+		$pid = $form_values['pid'.$number];
+		$eid = $form_values['eid'.$number];
+		$name = getFullNameFromPID($pid);
+		$new = $form_values['newvalue'.$number];
+		if(substr($new,2,1) == "'")
+		{
+			$new = substr($new,2,-1);
+		}
+			
+		$old = $form_values['oldvalue'.$number];
+		$field = $form_values['field'.$number];
+		$sql = $form_values['sql'.$number];
+		$drugid = $form_values['drugid'.$number];
+		$drug = getDrugName($drugid);
+		$actioncode = $form_values['action'.$number];
+		if($actioncode)
+		{
+			$action = "begun";
+		}
+		else
+		{
+			$action = "stopped";
+		}
+
+		if(!$old)
+		{
+			$old = "<blank>";
+		}
+		if(!$new)
+		{
+			$new = "<blank>";
+		}
+		
+		if($drugid)
+		{
+			$message = $name." has ".$action." the medication ".$drug;
+		}
+		else
+		{
+			$message = $name." would like to change ".$field." of the table ".$table." from ".$old." to ".$new;
+		}
+
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 3
+		);
+
+		$form['change'] = array(
+			'#type' => 'radios',
+			'#title' => $message,
+			'#options' => array(
+				'Y' => t('Approve'),
+				'N' => t('Reject')
+			),
+			'#required' => TRUE
+		);
+
+		$form['sql'] = array(
+			'#type' => 'hidden',
+			'#value' => $sql
+		);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $pid
+		);
+
+		$form['eid'] = array(
+			'#type' => 'hidden',
+			'#value' => $eid
+		);
+
+		$form['field'] = array(
+			'#type' => 'hidden',
+			'#value' => $field
+		);
+
+		$form['newvalue'] = array(
+			'#type' => 'hidden',
+			'#value' => $new
+		);
+
+		$form['action'] = array(
+			'#type' => 'hidden',
+			'#value' => $actioncode
+		);
+
+		$form['drug'] = array(
+			'#type' => 'hidden',
+			'#value' => $drug
+		);
+	
+		$form['sumbit'] = array(
+			'#weight' => '10',
+			'#type' => 'submit',
+			'#value' => t('Continue')
+		);
+
+			
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+
+
+	}
+				
+
+	return $form;
+}
+
+function pending_change_form_validate($formid, $form_values)
+{
+	if($form_values['phase'] == 1)
+	{
+		if(!ctype_digit($form_values['did']))
+		{
+			form_set_error('docid', t('Please enter numbers only'));
+		}
+		else if(!verifyUserIsDoctor($form_values['did'],$form_values['uid']))
+		{
+			form_set_error('docid', t('This is not your Employee ID number.  Please try again.'));
+		}
+	}
+	if($form_values['phase'] == 2 && $form_values['change'])
+	{
+		if(!ctype_digit($form_values['change']))
+		{
+			form_set_error('change', t('Please enter numbers only'));
+		}
+		else
+		{
+			if($form_values['change'] >= $form_values['counter'])
+			{
+				form_set_error('change', t('That is not a valid change number.'));
+			}
+		}
+	}
+}
+
+function pending_change_form_submit($formid, $form_values)
+{
+	if($form_values['phase'] == 3)
+	{
+		if($form_values['change'] == 'Y')
+		{
+			db_query($form_values['sql']);
+
+			if($form_values['field'])
+			{
+				sendResponseToPatient($form_values['pid'],$form_values['field'],$form_values['newvalue'],true);
+			}
+			else
+			{
+				sendMedResponseToPatient($form_values['pid'],$form_values['drugid'],$form_values['action'],true);
+			}
+		}
+		else
+		{
+			if($form_values['field'])
+			{
+				sendResponseToPatient($form_values['pid'],$form_values['field'],$form_values['newvalue'],false);
+			}
+			else
+			{
+				sendMedResponseToPatient($form_values['pid'],$form_values['drugid'],$form_values['action'],false);
+			}
+		}
+
+		deleteFromPendingChanges($form_values['sql']);
+		drupal_set_message(t(getFullNameFromPID($form_values['pid']).' has been notified of your response'));
+	}
+}
+
+
+function patient_prescription_form($form_values = NULL)
+{
+	global $user;
+
+	$form = array();
+	if(!$form_values || ($form_values['phase'] == 3 && ($form_values['confirm'] == 'N' || $form_values['override'] == 'N')))
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 1
+		);
+
+		$form['uid'] = array(
+			'#type' => 'hidden',
+			'#value' => $user->uid
+		);
+
+                $form['docid'] = array(
+			'#weight' => '1',
+			'#type' => 'textfield',
+			'#title' => t('Please enter your Employee ID'),
+			'#size' => 9,
+    			'#maxlength' => 9,
+			'#required' => TRUE,
+		);
+
+		$form['pid'] = array(
+			'#weight' => '2',
+			'#type' => 'textfield',
+			'#title' => t('Please enter the patients ID'),
+			'#size' => 9,
+    			'#maxlength' => 9,
+			'#required' => TRUE,
+		);
+
+		$form['sumbit'] = array(
+			'#weight' => '10',
+			'#type' => 'submit',
+			'#value' => t('Continue')
+		);
+	
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 1)
+	{
+	       $form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 2
+		);
+                $results =  getPatientMeds($form_values['pid']); 
+                
+		$patientDrugs ='Current patient drugs:<ul>';
+		while($row = db_fetch_array($results))
+		{
+		       $patientDrugs = $patientDrugs .getDrugNameFromID($row['drugid'])." ";
+                }
+       
+		$form['pmeds'] = array(
+		     '#weight' => '1',
+		     '#type' => 'item',
+		     '#title' => $patientDrugs
+		);
+                
+		$result = db_query("SELECT drugid, drugName FROM drugs");
+                $drugs = array();
+		while($row = db_fetch_array($result))
+		{
+		       $drugs[$row['drugid']] = $row['drugName'];
+		}
+               
+	        $form['medications']['medications'] = array(
+		     '#weight' => '1',
+		     '#type' => 'select',
+		     '#title' => t('Select a medication for this prescription'),
+		     '#options' => $drugs,
+		     '#required' => TRUE
+                );
+
+		$form['dosage'] = array(
+			'#weight' => '2',
+			'#type' => 'textfield',
+			'#title' => t('Please enter dosage for this medication'),
+			'#size' => 4,
+    			'#maxlength' => 4,
+			'#required' => TRUE,
+		);
+		
+		$form['units'] = array(
+			'#weight' => '2',
+			'#type' => 'textfield',
+			'#title' => t('Units'),
+			'#size' => 4,
+    			'#maxlength' => 4,
+			'#required' => TRUE,
+		);
+		
+		$form['frequency'] = array(
+			'#weight' => '2',
+			'#type' => 'textfield',
+			'#title' => t('Frequency'),
+			'#size' => 4,
+    			'#maxlength' => 4,
+			'#required' => TRUE,
+		);
+		
+		$form['duration'] = array(
+			'#weight' => '3',
+			'#type' => 'textfield',
+			'#title' => t('Duration'),
+			'#size' => 4,
+    			'#maxlength' => 4,
+			'#required' => TRUE,
+		);
+
+
+		$form['name'] = array(
+			'#type' => 'item',
+			'#title' => getFullNameFromPID($form_values['pid']),
+		);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+                $form['docid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['docid']
+		);
+
+		$form['submit'] = array(
+			'#weight' => '6',
+			'#type' => 'submit',
+			'#value' => t('Continue'),
+		 );
+		
+		 $form['#multistep'] = TRUE;
+	 	 $form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 2)
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 3
+		);
+                
+		$pid		= $form_values['pid'];
+	        $drugid		= $form_values['medications'];
+		$docid		= $form_values['docid'];
+		$dosage		= $form_values['dosage'];
+		$units		= $form_values['units'];
+		$frequency	= $form_values['frequency'];
+		$duration	= $form_values['duration'];
+	        
+		$alert = checkForProblems($pid,$drugid,$docid,$dosage,$units,$frequency,$duration);
+	        
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $pid
+		);
+         	$form['drugid'] = array(
+			'#type' => 'hidden',
+			'#value' => $drugid
+		);
+	        $form['docid'] = array(
+			'#type' => 'hidden',
+			'#value' => $docid
+		);
+         	$form['dosage'] = array(
+			'#type' => 'hidden',
+			'#value' => $dosage
+		);
+	        $form['units'] = array(
+			'#type' => 'hidden',
+			'#value' => $units
+		);
+         	$form['frequency'] = array(
+			'#type' => 'hidden',
+			'#value' => $frequency
+		);
+        	$form['duration'] = array(
+			'#type' => 'hidden',
+			'#value' => $duration
+		);
+
+                $form['medication'] = array(
+		        '#type' => 'hidden',
+		        '#value' => $form_values['medication']
+		);
+                 
+		$form['dosage'] = array(
+		        '#type' => 'hidden',
+		        '#value' => $form_values['dosage']
+		);
+
+		if(!$alert){
+	        	$form['confirm'] = array(
+		        	'#type' => 'radios',
+		  	        '#title' => t('This prescription is safe. Do you want it to be processed?'),
+			        '#options' => array(
+				     'Y' => t('Yes'),
+				     'N' => t('No')
+			         ),
+			         '#default_value' => 'N'
+		         );
+		}
+		else
+		{
+			$form['override'] = array(
+				'#weight' => '1',
+				'#type' => 'radios',
+				'#title' => t('Do you want to override the warning?'),
+				'#options' => array(
+					'Y' => t('Yes'),
+					'N' => t('No')
+				),
+				'#default_value' => 'N'
+			);
+                 	$form['justification'] = array(
+				'#weight' => '2',
+				'#type' => 'textarea',
+				'#title' => t('Justification for override'),
+				'#required' => FALSE,
+			        '#cols' => 10,
+			        '#rows' => 3
+			);
+		}
+		
+		$form['submit'] = array(
+			'#weight' => '6',
+			'#type' => 'submit',
+			'#value' => t('Continue'),
+		);
+		
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+        if($form_values['phase'] == 3 && ($form_values['confirm'] == 'Y' ||  $form_values['override'] == 'Y' )) 
+        {
+		$form['message'] = array(
+			'#type' => 'item',
+			'#value' => t('Your prescription is now available at the printer')
+		);
+	}
+
+	return $form;
+}
+
+function patient_prescription_form_validate($formid, $form_values)
+{
+	if($form_values['phase'] == 1)
+	{
+		if(!ctype_digit($form_values['pid']))
+		{
+			form_set_error('pid', t('Please enter numbers only'));
+		}
+		else if(!getSSNfromPID($form_values['pid']))
+		{
+			form_set_error('pid', t('There is no patient with this PID'));
+		}
+		else if(!updatable($form_values['pid']))
+		{
+			form_set_error('pid', t('That patient has already passed away'));
+		}	
+		
+		if(!ctype_digit($form_values['docid']))
+		{
+			form_set_error('docid', t('Please enter numbers only'));
+		}
+		else if(!verifyUserIsDoctor($form_values['docid'],$form_values['uid']))
+		{
+			form_set_error('docid', t('This is not your Employee ID number.  Please try again.'));
+		}
+	}
+
+        if($form_values['phase'] == 2)
+	{
+		if(!ctype_digit($form_values['dosage']))
+		{
+			form_set_error('dosage', t('Please enter numbers only'));
+		}
+		
+		if(!ctype_digit($form_values['frequency']))
+		{
+			form_set_error('frequency', t('Please enter numbers only'));
+		}
+                
+		if(!ctype_digit($form_values['duration']))
+		{
+			form_set_error('duration', t('Please enter numbers only'));
+		}
+
+               if(ctype_digit($form_values['units']))
+		{
+			form_set_error('units', t('Please enter strings only'));
+		}
+
+        }
+	
+	if($form_values['phase'] == 3 )
+	{
+		 if( $form_values['override'] == 'Y' && $form_values['justification'] == null)
+                 {
+                        form_set_error('justification', t('Please enter your justification for overriding the alert'));
+                 }
+	}
+}
+
+function patient_prescription_form_submit($formid, $form_values)
+{
+
+	if($form_values['phase'] == 3 && ( $form_values['override'] == 'Y' || $form_values['confirm'] == 'Y'))
+	{
+
+	  	enterRxIntoSystem($form_values['pid'],$form_values['drugid'],$form_values['docid'],$form_values['dosage'],$form_values['units'],$form_values['frequency'],$form_values['duration']);
+		if ($form_values['override'] == 'Y') 
+		{
+       			overrideRx($form_values['pid'],$form_values['docid'],$form_values['justification']); 
+	  	}
+	}
+}
+
+function register_user_id_form($form_values = NULL)
+{
+	$form = array();
+
+	if(!$form_values || ($form_values['phase'] == 2 && $form_values['choice'] == 'N'))
+	{
+		drupal_get_messages();
+
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 1
+		);
+
+		$form['handle'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Please enter the MHC-PMS username of the newly registered user'),
+			'#size' => 30,
+			'#required' => TRUE,
+		);
+
+		$form['id'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Please enter the ID number of the newly registered user'),
+			'#size' => 9,
+			'#required' => TRUE,
+		);
+
+		$form['type'] = array(
+			'#type' => 'radios',
+			'#title' => t('Is this user a patient or an employee?'),
+			'#options' => array(
+				'P' => t('Patient'),
+				'E' => t('Employee')
+			),
+		);
+
+		$form['submit'] = array(
+			'#weight' => '6',
+			'#type' => 'submit',
+			'#value' => t('Continue'),
+		);
+		
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 1)
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 2
+		);
+		
+		if($form_values['type'] == 'P')
+		{
+			$type = ' patient ';
+			$name = getFullNamefromPID($form_values['id']);
+		}
+		
+		else 
+		{
+			$type = ' employee ';
+			$name = getFullNamefromEID($form_values['id']);
+		}
+
+		$form['id'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['id']
+		);
+
+		$form['handle'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['handle']
+		);
+
+		$form['type'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['type']
+		);
+
+		drupal_set_message(t('Link'.$type.$name.' to username '.$form_values['handle'].'?'));
+
+		$form['choice'] = array(
+			'#type' => 'radios',
+			'#title' => t('Is this correct?'),
+			'#options' => array(
+				'Y' => t('Yes'),
+				'N' => t('No')
+			),
+			'#default_value' => 'N',
+		);
+
+		$form['submit'] = array(
+			'#weight' => '6',
+			'#type' => 'submit',
+			'#value' => t('Continue'),
+		);
+		
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	/*if($form_values['phase'] == 2)
+	{
+		$form['success'] = array(
+			'#type' => 'item',
+			'#title' => t('This user has been successfully linked')
+		);
+	}*/
+
+	return $form;
+}
+
+function register_user_id_form_validate($form_id, $form_values)
+{
+	if($form_values['phase'] == 1)
+	{
+		if(!verifyExistenceOfUser($form_values['handle']))
+		{
+			form_set_error('handle', t('This is not a registered username'));
+		}
+
+		if(!ctype_digit($form_values['id']))
+		{
+			form_set_error('id', t('Please enter numbers only'));
+		}
+
+		else
+		{
+			if($form_values['type'] == 'P' && !existsAsPatient($form_values['id']))
+			{
+				form_set_error('id', t('This is not a valid Patient ID number.'));
+			}
+			if($form_values['type'] == 'E' && !existsAsEmployee($form_values['id']))
+			{
+				form_set_error('id', t('This is not a valid Employee ID number.'));
+			}
+		}
+	}
+}
+
+function register_user_id_form_submit($form_id, $form_values)
+{
+	if($form_values['phase'] == 2 && $form_values['choice'] == 'Y')
+	{
+		drupal_get_messages();
+
+		if($form_values['type'] == 'P')
+		{
+			updatePatientUserID($form_values['handle'],$form_values['id']);
+			drupal_set_message(t('Patient '.getFullNameFromPID($form_values['id']).' has been successfully linked to user '.$form_values['handle'])); 
+		}
+		else
+		{
+			updateEmployeeUserId($form_values['handle'],$form_values['id']);
+			drupal_set_message(t('Employee '.getFullNameFromEID($form_values['id']).' has been successfully linked to user '.$form_values['handle'])); 
+		}
+	}
+}
+
+
+	
+		
+function patient_death_form($form_values = NULL)
+{
+	$form = array();
+	if(!$form_values || ($form_values['phase'] == 2 && $form_values['choice'] == 'N'))
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 1
+		);
+		
+		$form['pid'] = array(
+			'#weight' => '-6',
+			'#type' => 'textfield',
+			'#title' => t('Please enter the patient ID of the patient who has died'),
+			'#size' => 9,
+    			'#maxlength' => 9,
+			'#required' => TRUE,
+		);
+
+		$form['sumbit'] = array(
+			'#weight' => '10',
+			'#type' => 'submit',
+			'#value' => t('Continue')
+		);
+	
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 1)
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 2
+		);
+
+		$form['name'] = array(
+			'#type' => 'item',
+			'#title' => getFullNameFromPID($form_values['pid']),
+		);
+
+		$form['address'] = array(
+			'#type' => 'item',
+			'#title' => getFullAddressFromSSN(getSSNFromPID($form_values['pid'])),
+		);
+
+		$form['pid'] = array(
+			'#type' => 'item',
+			'#title' => "Patient ID ".$form_values['pid'],
+		);
+			
+		
+		$form['choice'] = array(
+			'#type' => 'radios',
+			'#title' => t('Is this the correct patient?'),
+			'#options' => array(
+				'Y' => t('Yes'),
+				'N' => t('No')
+			),
+			'#default_value' => 'N'
+		);
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+		$form['submit'] = array(
+    			'#type' => 'submit',
+			'#value' => t('Continue'),
+		);
+		
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 2 && $form_values['choice'] == 'Y')
+	{
+		$form['phase'] = array(
+			'#type' => 'hidden',
+			'#value' => 3
+		);
+
+		$form['name'] = array(
+			'#type' => 'item',
+			'#title' => $form_values['name'],
+		);
+
+		$form['date'] = array(
+			'#type' => 'textfield',
+			'#title' => t('Date Of Death (YYYY-MM-DD)'), 
+			'#required' => TRUE,
+		);
+
+		$form['cause'] = array(
+			'#type' => 'textarea',
+			'#title' => t('Enter cause of death'),
+			'#required' => TRUE
+		);
+		
+
+		$form['pid'] = array(
+			'#type' => 'hidden',
+			'#value' => $form_values['pid']
+		);
+
+		$form['submit'] = array(
+    			'#type' => 'submit',
+			'#value' => t('Process'),
+		);
+		
+		$form['#multistep'] = TRUE;
+		$form['#redirect'] = FALSE;
+	}
+
+	if($form_values['phase'] == 3)
+	{
+		$form['message'] = array(
+			'#type' => 'item',
+			'#value' => t('Your entry has been processed')
+		);
+	}
+
+	return $form;
+}
+
+function patient_death_form_validate($formid, $form_values)
+{
+	if($form_values['phase'] == 1)
+	{
+		if(!ctype_digit($form_values['pid']))
+		{
+			form_set_error('pid', t('Please enter numbers only'));
+		}
+		else if(!getSSNfromPID($form_values['pid']))
+		{
+			form_set_error('pid', t('There is no patient with this patient ID'));
+		}
+		else if(!updatable($form_values['pid']))
+		{
+			form_set_error('pid', t('That patient has already passed away'));
+		}		
+	}
+}
+
+function patient_death_form_submit($formid, $form_values)
+{
+	if($form_values['phase'] == 3)
+	{
+		handlePatientDeath($form_values['pid'], $form_values['date'], $form_values['cause']);
+	}
+}
+
+function handlePatientDeath($pid, $date, $cause)
+{
+	db_query("INSERT INTO {deceasedPatients} (patientid, dateOfDeath, causeOfDeath) 
+			VALUES (%d, '%s', '%s')",
+			$pid, $date, $cause);
+}
+
+function getSSNfromPID($pid)
+{
+	$result = db_fetch_array(db_query("SELECT ssn FROM {patients} WHERE patientid = %d", $pid));
+	return $result['ssn'];
+}
+
+
+function getPIDfromSSN($ssn)
+{
+	$result = db_fetch_array(db_query("SELECT patientid FROM {patients} WHERE ssn = %d", $ssn));
+	return $result['patientid'];
+}
+
+function getFullNamefromPID($pid)
+{
+	$name = db_fetch_array(db_query("SELECT firstName, lastName FROM {patients} WHERE patientid = %d", $pid));
+	$firstName = $name['firstName'];
+	$lastName = $name['lastName'];
+	return $firstName.' '.$lastName;
+}
+
+function getFullNamefromEID($eid)
+{
+	$name = db_fetch_array(db_query("SELECT firstName, lastName FROM {employees} WHERE employeeid = %d", $eid));
+	$firstName = $name['firstName'];
+	$lastName = $name['lastName'];
+	return $firstName.' '.$lastName;
+}
+
+function getDIDfromSSN($ssn)
+{
+	$result = db_fetch_array(db_query("SELECT employeeid FROM {employees} WHERE ssn = %d", $ssn));
+	return $result['employeeid'];
+}
+
+function getFullNamefromSSN($ssn)
+{
+	$name = db_fetch_array(db_query("SELECT firstName, lastName FROM {patients} WHERE ssn = %d", $ssn));
+	$firstName = $name['firstName'];
+	$lastName = $name['lastName'];
+	return $firstName.' '.$lastName;
+}
+
+function getFullAddressfromSSN($ssn)
+{
+	$address = db_fetch_array(db_query("SELECT address, city, state, zip FROM {patients} WHERE ssn = %d", $ssn));
+	$street = $address['address'];
+	$city = $address['city'];
+	$state = $address['state'];
+	$zip = $address['zip'];
+	return $street.'<br>'.$city.', '.$state.' '.$zip;
+}
+function getPatientMeds($pid)
+{
+        $result = db_query("SELECT drugid FROM {patientMeds}
+	                    WHERE patientid = %d
+			    AND endDate IS NULL",
+ 			   $pid);
+        return $result;
+}
+
+function getDrugNameFromID($drugid)
+{
+        $result = db_fetch_array(db_query("SELECT drugname FROM {drugs}
+                                           WHERE drugid = %d",
+	                                  $drugid));
+        return $result['drugname'];
+}
+
+function checkForProblems($pid,$drugid,$empid,$dosage,$units,$frequency,$days)
+{
+        $allergy = allergyConflict($drugid,$pid);
+        
+	$dose = maxDoseExceeded($pid,$drugid,$units,$frequency*$days*$dosage);
+
+        $contra = contraindicationsExist($pid,$drugid);
+
+        if(!$allergy && !$dose && !$contra)
+        {
+                return false;
+        }
+
+        if($allergy)
+        {
+                drupal_set_message(t('The patient is allergic to '.getDrugNameFromID($drugid)));
+        }
+
+        if($dose)
+        {
+                drupal_set_message(t('This prescription will cause the patient to exceed maximum dosage by '.$dose.' '.$units));
+        }
+
+        if($contra)
+        {
+                drupal_set_message(t('Patient is currently taking the following contraindicated drugs: '));
+                for($i=0;$i<sizeof($contra);$i++)
+                {
+                       drupal_set_message(t(getDrugNameFromID($contra[$i]))); 
+                }
+        }
+
+        return true;
+}
+
+function allergyConflict($med,$pid)
+{
+        $allergies = getAllergies($pid);
+
+        if(!$allergies)
+        {
+                return false;
+        }
+
+        while($row = db_fetch_array($allergies))
+        {
+                if($row['drugid'] == $med)
+                {
+                        return true;
+                }
+        }
+
+        return false;
+}
+function maxDoseExceeded($pid,$drugid,$units,$newQuantity)
+{
+        $history = get90DayHistory($pid,$drugid,$units);
+
+        $maxDose = maxDose($drugid,$units);
+
+        $history = $history['SUM(quantity)'];
+
+	if(($history + $newQuantity) > $maxDose)
+     	{
+             return(($history + $newQuantity) - $maxDose);
+        }
+
+	else return false;
+}
+
+function contraindicationsExist($pid,$drugid)
+{
+        $contraindications = getContraindications($drugid);
+
+        $patientMeds = getPatientMeds($pid);
+
+        if(!$contraindications || !$patientMeds)
+        {
+                return false;
+        }
+
+        $problems = array();
+        
+        while($row1 = db_fetch_array($patientMeds))
+        {
+                $contra = getContraindications($drugid);
+                
+                while($row2 = db_fetch_array($contra))
+                {
+                        if($row1['drugid'] == $row2['drugid'])
+                        {
+                                $problems[] = $row1['drugid'];
+                        }
+                }
+        }
+
+        return $problems;
+}
+
+function getContraindications($drugid)
+{
+        $result = db_query("SELECT drugid2 AS drugid FROM {contraindications}
+                        WHERE drugid1 = %d
+                        UNION
+                        SELECT drugid1 AS drugid FROM {contraindications}
+                        WHERE drugid2 = %d",
+                        $drugid,$drugid);
+
+        return $result;
+}
+
+function getAllergies($pid)
+{
+        $result = db_query("SELECT drugid FROM {patientAllergies}
+                                WHERE patientid = %d", $pid);
+
+        return $result;
+}
+
+function get90DayHistory($pid,$drugid,$units)
+{
+        $dosage = db_fetch_array(db_query("SELECT SUM(quantity) FROM {prescriptions}
+                        WHERE patientid = %d
+                        AND units = '%s'
+                        AND drugid = %d
+                        AND date > DATE_SUB(CURRENT_DATE,INTERVAL 90 DAY)",
+                        $pid, $units, $drugid));
+        
+        return $dosage;
+}
+
+function maxDose($drugid,$units)
+{
+        $result = db_fetch_array(db_query("SELECT maxDose FROM maxDosage
+                        WHERE drugid = %d
+                        AND units = '%s'",
+                        $drugid,$units));
+
+        return $result['maxDose'];
+}
+
+function enterRxIntoSystem($pid,$drugid,$empid,$dosage,$units,$frequency,$days)
+{
+	addToRxTable($pid,$drugid,$empid,$dosage,$units,$frequency,$days);
+
+        addToPatientMedsTable($pid,$drugid);
+
+        //printRx();
+}
+function addToRxTable($pid,$drugid,$empid,$dosage,$units,$frequency,$days)
+{
+        db_query("INSERT INTO {prescriptions} (patientid, employeeid, drugid, quantity, units, dosage, frequency)
+                        VALUES
+                        (%d,%d,%d,%d,'%s',%d,%d)",
+                        $pid, $empid, $drugid, $dosage*$frequency*$days, $units, $dosage, $frequency);
+}
+
+function addToPatientMedsTable($pid,$drugid)
+{
+        $exists = db_fetch_array(db_query("SELECT * FROM {patientMeds}
+                        WHERE patientid = %d
+                        AND drugid = %d
+                        AND endDate IS NULL",
+                        $pid,$drugid));
+
+        if(!$exists)
+        {
+                db_query("INSERT INTO {patientMeds} (patientid,drugid,startDate)
+                        VALUES
+                        (%d,%d,CURRENT_TIMESTAMP())",
+                        $pid,$drugid);
+        }
+}
+
+function overrideRx($pid,$empid,$reason)
+{
+        db_query("INSERT INTO {overrides} (rxid,comments)
+                        VALUES
+                        (%d,'%s')",
+                        getLastRxID($pid),$reason);
+}
+
+function getLastRxID($pid)
+{
+        $result = db_fetch_array(db_query("SELECT rxid FROM {prescriptions}
+                        WHERE patientid = %d
+                        ORDER BY rxid DESC",
+                        $pid));
+
+        return $result['rxid'];
+}
+
+function getPatientPersonalInfo($pid)
+{
+        $result = db_query("SELECT * FROM {patients} WHERE patientid = '%s'", $pid);
+        return db_fetch_array($result);
+}
+
+function getPatientEmergencyInfo($pid)
+{
+        $result = db_query("SELECT * FROM {emergencyContacts} WHERE patientid = '%s'", $pid);
+        return db_fetch_array($result);
+}
+
+function updatable($pid)
+{
+	$result = db_fetch_array(db_query("SELECT * from {deceasedPatients}
+			WHERE patientid = %d",$pid));
+
+	if($result)
+	{
+		return false;
+	}
+	else return true;
+}
+
+function verifyUserIsPatient($pid,$uid)
+{
+	$result = db_fetch_array(db_query("SELECT userid from {patients}
+			WHERE patientid = %d",$pid));
+
+	if($result['userid'] == $uid)
+		return true;
+	else return false;
+}
+
+function existsAsPatient($pid)
+{
+	$result = db_fetch_array(db_query("SELECT * FROM {patients}
+			WHERE patientid = %d", $pid));
+
+	return $result;
+}
+
+function verifyUserIsDoctor($did,$uid)
+{
+	$result = db_fetch_array(db_query("SELECT userid from {employees}
+			WHERE employeeid = %d",$did));
+
+	if($result['userid'] == $uid)
+		return true;
+	else return false;
+}
+
+
+function existsAsEmployee($eid)
+{
+	$result = db_fetch_array(db_query("SELECT * FROM {employees}
+			WHERE employeeid = %d", $eid));
+
+	return $result;
+}
+
+function updatePatientUserID($name,$pid)
+{
+	$result = db_fetch_array(db_query("SELECT uid FROM {users}
+			WHERE name = '%s'", $name));
+
+	$uid = $result['uid'];
+
+	db_query("UPDATE {patients} SET userid = %d WHERE patientid = %d",
+			$uid,$pid);
+}
+
+function updateEmployeeUserID($name,$eid)
+{
+	$result = db_fetch_array(db_query("SELECT uid FROM {users}
+			WHERE name = '%s'", $name));
+
+	$uid = $result['uid'];
+
+	db_query("UPDATE {employees} SET userid = %d WHERE employeeid = %d",
+			$uid,$eid);
+}
+
+function verifyExistenceOfUser($name)
+{
+	$result = db_fetch_array(db_query("SELECT * FROM {users}
+			WHERE name = '%s'", $name));
+
+	return $result;
+}
+
+function identifyPersonalChanges($values)
+{
+	$current = getPatientPersonalInfo($values['pid']);
+
+	if($values['firstName'] != $current['firstName'])
+		generatePersonalChange($values['pid'],'firstName',"'".$values['firstName']."'");
+
+
+	if($values['middleInitial'] != $current['middleInitial'])
+		generatePersonalChange($values['pid'],'middleInitial',"'".$values['middleInitial']."'");
+
+
+	if($values['lastName'] != $current['lastName'])
+		generatePersonalChange($values['pid'],'lastName',"'".$values['lastName']."'");
+
+
+	if($values['address'] != $current['address'])
+		generatePersonalChange($values['pid'],'address',"'".$values['address']."'");
+
+
+	if($values['city'] != $current['city'])
+		generatePersonalChange($values['pid'],'city',"'".$values['city']."'");
+
+
+	if($values['state'] != $current['state'])
+		generatePersonalChange($values['pid'],'state',"'".$values['state']."'");
+
+
+	if($values['zip'] != $current['zip'])
+		generatePersonalChange($values['pid'],'zip',"'".$values['zip']."'");
+
+
+	if($values['primaryPhone'] != $current['primaryPhone'])
+		generatePersonalChange($values['pid'],'primaryPhone',"'".$values['primaryPhone']."'");
+
+
+	if($values['secondaryPhone'] != $current['secondaryPhone'])
+		generatePersonalChange($values['pid'],'secondaryPhone',"'".$values['secondaryPhone']."'");
+
+
+	if($values['emailAddress'] != $current['emailAddress'])
+		generatePersonalChange($values['pid'],'emailAddress',"'".$values['emailAddress']."'");
+
+
+	if($values['maritalStatus'] != $current['maritalStatus'])
+		generatePersonalChange($values['pid'],'maritalStatus',"'".$values['maritalStatus']."'");
+
+}
+
+function generatePersonalChange($pid,$field,$newValue)
+{
+	$sql = "UPDATE {patients} SET ".$field." = ".$newValue." WHERE patientid = ".$pid;
+
+	$doctor = getDIDForPID($pid);
+
+	$email = getEmailForDID($doctor);
+
+	$subject = "Patient change request";
+
+	$message = 'Your patient '.getFullNameFromPID($pid).' has requested a change to his/her personal information.  Please log in and accept or reject this change.';
+
+	drupal_mail(1,$email,$subject,$message);
+
+	db_query("INSERT INTO {pendingChanges} (patientid,employeeid,SeQL)
+			VALUES (%d,%d,'%s')",$pid,$doctor,$sql);
+}
+
+function getDIDForPID($pid)
+{
+	$result = db_fetch_array(db_query("SELECT employeeid FROM {primaryDoctor}
+			WHERE patientid = %d", $pid));
+	return $result['employeeid'];
+}
+	
+function decodeMaritalStatus($value)
+{
+	if($value == 'S')
+		return 'Single';
+	if($value == 'M')
+		return 'Married';
+	if($value == 'W')
+		return 'Widowed';
+	if($value == 'D')
+		return 'Divorced';
+	else return 'Separated';
+}
+
+function retrievePendingChanges($docid)
+{
+	$resource = db_query("SELECT * FROM {pendingChanges}
+			WHERE employeeid = %d
+			ORDER BY date asc", $docid);
+
+	$result = array();
+	$result[0] = "dummy";
+	
+	while($row = db_fetch_array($resource))
+	{
+		$result[] = $row;
+	}
+
+	return $result;
+}
+
+
+function getEmailForDID($did)
+{
+	$results = db_fetch_array(db_query("SELECT emailAddress FROM {employees} WHERE employeeid = %d", $did));
+	
+	return $results['emailAddress'];
+}
+
+function getEmailForPID($pid)
+{
+	$results = db_fetch_array(db_query("SELECT emailAddress FROM {patients} WHERE patientid = %d", $pid));
+	
+	return $results['emailAddress'];
+}
+	
+function parsePersonalString($sql,$pid,$eid)
+{
+	$result = array("field" => "", "newvalue" => "", "sql" => "","oldvalue" => "", "pid" => "", "eid" => "");
+	$temp = explode("SET",$sql);
+	$fieldarray = explode("=",$temp[1]);
+	$field = $fieldarray[0];
+
+	$valarray = explode("WHERE", $fieldarray[1]);
+	$newval = $valarray[0];
+ 	
+	$result["field"] = $field;
+	$result["newvalue"] = $newval;
+	$result["sql"] = $sql;
+	$result["oldvalue"]= getOldPersonal($pid,$field);
+	$result["pid"]= $pid;
+	$result["eid"]= $eid;
+
+	return $result;
+}
+
+function getOldPersonal($pid,$field)
+{
+        $result = db_fetch_array(db_query("SELECT ". $field ." FROM {patients} WHERE patientid = '%s'", $pid));
+	
+	list ($key, $value) = each($result);
+	return $value;
+}
+
+function parseMedString($sql,$pid,$eid) 
+{
+	$result = array("drugid" => "", "action" => "", "sql" => "", "pid" => "", "eid" => "");
+	
+	$type = explode(" ", $sql,2);
+
+	if($type[0] == "INSERT")
+	{
+		$temp = explode(",",$type[1]);
+		$drug = $temp[3];
+		$result["action"] = 1;
+	}
+	else
+	{
+		$temp = explode("WHERE",$type[1]);
+		$drugarray = explode("=",$temp[1]);
+		$drug = $drugarray[1];
+		$result["action"] = 0;
+	}
+	
+	$result["drugid"] = $drug;
+	$result["sql"] = $sql;
+	$result["pid"] = $pid;
+	$result["eid"] = $eid;
+	return $result;
+}
+
+function parseTable($sql) 
+{
+	if(strpos($sql,"{patients}"))
+		return "patients";
+	if(strpos($sql,"{emergencyContacts}"))
+		return "emergencyContacts";
+	if(strpos($sql,"{patientMeds}"))
+		return "patientMeds";
+	
+	/*if(preg_match("/.*\{(?P<name>\w+)\}/", $sql, $table)){
+	 	return $table[1];
+	}*/
+}
+
+/*
+ * To Determine Medication Changes from Patient 
+ */
+//$drugid is a int  and $pid is a string
+function patientTakingDrug($drugid,$pid)
+{
+	$result = db_fetch_array(db_query("SELECT * FROM {patientMeds} 
+	                     WHERE drugid = %d AND patientid = %d
+			     AND endDate IS NULL",$drugid,$pid));
+
+	return $result;
+}
+
+/* 
+ * generating sql for Medication 
+ */
+function identifyMedicationChanges($form_values)
+{
+	$drugs = getAllDrugs();
+	$pid = $form_values['pid'];
+	$size = sizeof($drugs);
+	for($i=1; $i<= $size; $i++)
+	{
+	    if($form_values['drug'.$i] == 0 && patientTakingDrug($i,$pid))
+	    {print($i. 'stopped');
+		// delete
+		generateMedicationStop($pid,$i);
+	    }
+	    else if($form_values['drug'.$i] == $i && !patientTakingDrug($i,$pid))
+	    {print($i.' added');
+	    	// add
+		generateMedicationAdd($pid,$i);
+	    }
+	}
+}
+
+function getAllDrugs()
+{
+	$resource = db_query("SELECT * FROM {drugs}
+				ORDER BY drugid ASC");
+
+	$result = array();
+	$i=1;
+	while($row = db_fetch_array($resource))
+	{
+		$result[$i] = $row['drugname'];
+		$i++;
+	}
+	
+	return $result;
+}
+
+function generateMedicationAdd($pid,$did){
+	$timestamp = time();
+	$sql = "INSERT INTO {patientMeds}(patientid,drugid,startDate) VALUES
+		(".$pid.",".$did.",".$timestamp.")";
+	
+	$doctor = getDIDForPID($pid);
+
+	$email = getEmailForDID($doctor);
+
+	$subject = 'Patient change request';
+
+	$message = 'Your patient '.getFullNameFromPID($pid).' has requested a change to his/her medication information.  Please log in and accept or reject this change.';
+
+	drupal_mail(1,$email,$subject,$message);
+
+	db_query("INSERT INTO {pendingChanges} (patientid,employeeid,SeQL)
+			VALUES (%d,%d,'%s')",$pid,$doctor,$sql);
+
+}
+
+function generateMedicationStop($pid,$did){
+	$timestamp = time();
+	$sql = "UPDATE {patientMeds} SET endDate=".$timestamp.
+	       " WHERE drugid=".$did." AND patientid=".$pid." AND endDate IS NULL";
+
+	$doctor = getDIDForPID($pid);
+
+	$email = getEmailForDID($doctor);
+
+	$subject = 'Patient change request';
+
+	$message = 'Your patient '.getFullNameFromPID($pid).' has requested a change to his/her medication information.  Please log in and accept or reject this change.';
+
+	drupal_mail(1,$email,$subject,$message);
+	
+	db_query("INSERT INTO {pendingChanges} (patientid,employeeid,SeQL)
+			VALUES (%d,%d,'%s')",$pid,$doctor,$sql);
+}
+
+/*
+ Helper functions for handling emergency contacts
+*/
+
+function getEmergencyContactsInfo($pid)
+{
+        $result = db_query("SELECT * FROM {emergencyContacts} WHERE patientid = '%s'", $pid);
+        return db_fetch_array($result);
+}
+
+function identifyEmergencyChanges($values)
+{
+        $current = getEmergencyContactsInfo($values['pid']);
+
+        if($values['firstName'] != $current['firstName'])
+                generateEmergencyContactsChange($values['pid'],'firstName',"'".$values['firstName']."'");
+
+        if($values['lastName'] != $current['lastName'])
+                generateEmergencyContactsChange($values['pid'],'lastName',"'".$values['lastName']."'");
+
+        if($values['address'] != $current['address'])
+                generateEmergencyContactsChange($values['pid'],'address',"'".$values['address']."'");
+
+        if($values['city'] != $current['city'])
+                generateEmergencyContactsChange($values['pid'],'city',"'".$values['city']."'");
+
+        if($values['state'] != $current['state'])
+                generateEmergencyContactsChange($values['pid'],'state',"'".$values['state']."'");
+
+        if($values['zip'] != $current['zip'])
+                generateEmergencyContactsChange($values['pid'],'zip',"'".$values['zip']."'");
+
+        if($values['primaryPhone'] != $current['primaryPhone'])
+                generateEmergencyContactsChange($values['pid'],'primaryPhone',"'".$values['primaryPhone']."'");
+
+        if($values['secondaryPhone'] != $current['secondaryPhone'])
+                generateEmergencyContactsChange($values['pid'],'secondaryPhone',"'".$values['secondaryPhone']."'");
+
+        if($values['emailAddress'] != $current['emailAddress'])
+                generateEmergencyContactsChange($values['pid'],'emailAddress',"'".$values['emailAddress']."'");
+}
+
+function generateEmergencyContactsChange($pid,$field,$newValue)
+{
+        $sql = "UPDATE {emergencyContacts} SET ".$field." = ".$newValue." WHERE patientid = ".$pid;
+
+        $doctor = getDIDForPID($pid);
+
+        $email = getEmailForDID($doctor);
+
+        $subject = "Patient change request";
+
+        $message = 'Your patient '.getFullNameFromPID($pid).' has requested a change to his/her emergency contact information.  Please log in and accept or reject this change.';
+
+        drupal_mail(1,$email,$subject,$message);
+
+        db_query("INSERT INTO {pendingChanges} (patientid,employeeid,SeQL)
+                        VALUES (%d,%d,'%s')",$pid,$doctor,$sql);
+}
+
+function parseEmergencyContactString($sql,$pid)
+{
+        $result = array("field" => "", "newvalue" => "", "sql" => "","oldvalue" => "", "pid" => "");
+        $temp = explode("SET",$sql);
+        $fieldarray = explode("=",$temp[1]);
+        $field = $fieldarray[0];
+
+        $valarray = explode("WHERE", $fieldarray[1]);
+        $newval = $valarray[0];
+
+        $result["field"] = $field;
+        $result["newvalue"] = $newval;
+        $result["sql"] = $sql;
+        $result["oldvalue"]= getOldEmergencyContact($pid,$field);
+        $result["pid"]= $pid;
+
+        return $result;
+}
+
+function getOldEmergencyContact($pid,$field)
+{
+      $result = db_fetch_array(db_query("SELECT ". $field ." FROM {emergencyContacts} WHERE patientid = '%s'", $pid));
+
+      list ($key, $value) = each($result);
+      return $value;
+}
+
+function deleteFromPendingChanges($sql)
+{
+	db_query("DELETE FROM {pendingChanges} WHERE SeQL = '%s'",$sql);
+}
+
+function sendResponseToPatient($pid,$field,$new,$value)
+{
+	if($value)
+	{
+		$response = " accepted. The database has been updated.";
+	}
+	else
+	{
+		$response = " rejected. Please consult with your doctor for more details.";
+	}
+
+	$email = getEmailForPID($pid);
+
+	$subject = 'Your recent change request';
+
+	$message = 'Your recent request to change '.$field.' to '.$new.' has been'.$response.' This message was auto-generated.  Please do not reply as this email is not monitored.';
+
+	drupal_mail(1,$email,$subject,$message);
+}
+
+function sendMedResponseToPatient($pid,$drug,$action,$value)
+{
+	if($action == 0)
+		$act = 'stop';
+	else
+		$act = 'start';
+
+	if($value)
+	{
+		$response = " acknowledged. The database has been updated.";
+	}
+	else
+	{
+		$response = " rejected. Please consult with your doctor for more details.";
+	}
+
+	$email = getEmailForPID($pid);
+
+	$subject = 'Your recent medication update request';
+
+	$message = 'Your recent request to update your medications to '.$act.' '.$drug.' has been'.$response.' This message was auto-generated.  Please do not reply as this email is not monitored.';
+
+	drupal_mail(1,$email,$subject,$message);
+}
+
+function getDrugMarkup($meds)
+{
+	$markup = '<br>';
+	$i=1;
+	$drugs = getAllDrugs();
+
+	/*while($meds[$i] != 0 && $meds[$i] != 1)
+	{
+		if($meds[$i] == 0)
+		{
+			$markup = $markup.$drugs[$i].'<br>';
+		}
+		else
+		{
+			$markup = $markup.'<b>'.$drugs[$i].'</b><br>';
+		}
+		$i++;
+	}*/
+
+	for($i=1;$i<sizeof($drugs);$i++)
+	{
+		if($meds[$i] == $i)
+		{
+			$markup = $markup.'<b>'.$drugs[$i].'</b><br>';
+		}
+		else
+		{
+			$markup = $markup.$drugs[$i].'<br>';
+		}
+	}
+	
+	return $markup;
+}
+
+function getDrugName($drugid)
+{
+	$result = db_fetch_array(db_query("SELECT drugname FROM {drugs}
+			WHERE drugid = %d", $drugid));
+
+	return $result['drugname'];
+}
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

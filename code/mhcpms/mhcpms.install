@@ -1,0 +1,447 @@
+<?php
+// $ID:  mhcpms.install
+
+/**
+*  Implementation of hook_install()
+*/
+function mhcpms_install() {
+	db_query("UPDATE {system} SET weight = 99 WHERE name = 'mhcpms'");
+
+	db_query("CREATE TABLE {patients} (
+			patientid	INT		NOT NULL AUTO_INCREMENT,
+			ssn		CHAR(10)	UNIQUE NOT NULL,
+			firstName	VARCHAR(50)	NOT NULL,
+			middleInitial	CHAR(1)		,
+			lastName	VARCHAR(50)	NOT NULL,
+			address		VARCHAR(100)	NOT NULL,
+			city		VARCHAR(50)	NOT NULL,
+			state		CHAR(2)		NOT NULL,
+			zip		CHAR(10)	NOT NULL,
+			primaryPhone	CHAR(10)	NOT NULL,
+			secondaryPhone	CHAR(10)	NOT NULL,
+			emailAddress	VARCHAR(50)	NOT NULL,
+			gender		CHAR(1)		NOT NULL,
+			dob		DATE		NOT NULL,
+			maritalStatus	CHAR(1)		,
+			userid		INT		DEFAULT 0,
+			PRIMARY KEY(patientid))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {deceasedPatients} (
+			patientid	INT		NOT NULL,
+			dateOfDeath	DATE		NOT NULL,
+			causeOfDeath	VARCHAR(100)	NOT NULL,
+			PRIMARY KEY(patientid))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {employees} (
+			employeeid	INT		NOT NULL AUTO_INCREMENT,
+			ssn		CHAR(10)	UNIQUE NOT NULL,
+			firstName	VARCHAR(50)	NOT NULL,
+			middleInitial	CHAR(1)		,
+			lastName	VARCHAR(50)	NOT NULL,
+			address		VARCHAR(100)	NOT NULL,
+			city		VARCHAR(50)	NOT NULL,
+			state		CHAR(2)		NOT NULL,
+			zip		CHAR(10)	NOT NULL,
+			primaryPhone	CHAR(10)	NOT NULL,
+			secondaryPhone	CHAR(10)	NOT NULL,
+			emailAddress	VARCHAR(50)	NOT NULL,
+			gender		CHAR(1)		NOT NULL,
+			dob		DATE		NOT NULL,
+			maritalStatus	CHAR(1)		,
+			role		INT		NOT NULL,
+			userid		INT		DEFAULT 0,
+			PRIMARY KEY(employeeid))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {emergencyContacts} (
+			patientid	INT		NOT NULL,
+			firstName	VARCHAR(50)	NOT NULL,
+			lastName	VARCHAR(50)	NOT NULL,
+			address		VARCHAR(100)	NOT NULL,
+			city		VARCHAR(50)	NOT NULL,
+			state		CHAR(2)		NOT NULL,
+			zip		CHAR(10)	NOT NULL,
+			primaryPhone	CHAR(10)	NOT NULL,
+			secondaryPhone	CHAR(10)	NOT NULL,
+			emailAddress	VARCHAR(50)	NOT NULL,
+			PRIMARY KEY(patientid))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {drugs} (
+			drugid		INT		NOT NULL AUTO_INCREMENT,
+			drugname	VARCHAR(100)	NOT NULL,
+			PRIMARY KEY(drugid))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {prescriptions} (
+			rxid		INT		NOT NULL AUTO_INCREMENT,
+			patientid	INT		NOT NULL,
+			employeeid	INT		NOT NULL,
+			drugid		INT		NOT NULL,
+			date		TIMESTAMP	NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			quantity	INT		NOT NULL,
+			units		CHAR(20)	NOT NULL,
+			dosage		INT		NOT NULL,
+			frequency	INT		NOT NULL,
+			PRIMARY KEY(rxid))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {overrides} (
+			overrideid	INT		NOT NULL AUTO_INCREMENT,
+			rxid		INT		NOT NULL,
+			comments	VARCHAR(200)	NOT NULL,
+			PRIMARY KEY(overrideid))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {patientMeds} (
+			patientid	INT		NOT NULL,
+			drugid		INT		NOT NULL,
+			startDate	TIMESTAMP	NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			endDate		DATE		,
+			PRIMARY KEY(patientid,drugid))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {contraindications} (
+			drugid1		INT		NOT NULL,
+			drugid2		INT		NOT NULL,
+			PRIMARY KEY(drugid1,drugid2))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {patientAllergies} (
+			patientid	INT		NOT NULL,
+			drugid		INT		NOT NULL,
+			PRIMARY KEY(patientid,drugid))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {maxDosage} (
+			drugid		INT		NOT NULL,
+			maxDose		INT		NOT NULL,
+			units		CHAR(20)	NOT NULL,
+			PRIMARY KEY(drugid,units))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {pendingChanges} (
+			patientid	INT		NOT NULL,
+			employeeid	INT		NOT NULL,
+			date		TIMESTAMP	NOT NULL,
+			SeQL		VARCHAR(200)	NOT NULL,
+			PRIMARY KEY(patientid,employeeid,SeQL))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {roles} (
+			number		INT		NOT NULL,
+			description	CHAR(25)	NOT NULL,
+			PRIMARY KEY(number))
+			ENGINE=INNODB");
+
+	db_query("CREATE TABLE {primaryDoctor} (
+			patientid	INT		NOT NULL,
+			employeeid	INT		NOT NULL,
+			PRIMARY KEY(patientid))
+			ENGINE=INNODB");
+
+
+	db_query("ALTER TABLE {emergencyContacts}
+		  ADD CONSTRAINT contact
+		  FOREIGN KEY (patientid) REFERENCES {patients}(patientid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {employees}
+		  ADD CONSTRAINT role
+		  FOREIGN KEY (role) REFERENCES {roles}(number)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {prescriptions}
+		  ADD CONSTRAINT rx1
+		  FOREIGN KEY (patientid) REFERENCES {patients}(patientid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {prescriptions}
+		  ADD CONSTRAINT rx2
+		  FOREIGN KEY (employeeid) REFERENCES {employees}(employeeid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {prescriptions}
+		  ADD CONSTRAINT rx3
+		  FOREIGN KEY (drugid) REFERENCES {drugs}(drugid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {overrides}
+		  ADD CONSTRAINT override
+		  FOREIGN KEY (rxid) REFERENCES {prescriptions}(rxid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {patientMeds}
+		  ADD CONSTRAINT meds1
+		  FOREIGN KEY (patientid) REFERENCES {patients}(patientid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {patientMeds}
+		  ADD CONSTRAINT meds2
+		  FOREIGN KEY (drugid) REFERENCES {drugs}(drugid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {deceasedPatients}
+		  ADD CONSTRAINT deceased
+		  FOREIGN KEY (patientid) REFERENCES {patients}(patientid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+	
+	db_query("ALTER TABLE {contraindications}
+		  ADD CONSTRAINT contra1
+		  FOREIGN KEY (drugid1) REFERENCES {drugs}(drugid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {contraindications}
+		  ADD CONSTRAINT contra2
+		  FOREIGN KEY (drugid2) REFERENCES {drugs}(drugid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {maxDosage}
+		  ADD CONSTRAINT maxDose
+		  FOREIGN KEY (drugid) REFERENCES {drugs}(drugid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {patientAllergies}
+		  ADD CONSTRAINT allergy1
+		  FOREIGN KEY (patientid) REFERENCES {patients}(patientid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {patientAllergies}
+		  ADD CONSTRAINT allergy2
+		  FOREIGN KEY (drugid) REFERENCES {drugs}(drugid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {pendingChanges}
+		  ADD CONSTRAINT changes1
+		  FOREIGN KEY (patientid) REFERENCES {patients}(patientid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {pendingChanges}
+		  ADD CONSTRAINT changes2
+		  FOREIGN KEY (employeeid) REFERENCES {employees}(employeeid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {primaryDoctor}
+		  ADD CONSTRAINT primaryDoc1
+		  FOREIGN KEY (patientid) REFERENCES {patients}(patientid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+
+	db_query("ALTER TABLE {primaryDoctor}
+		  ADD CONSTRAINT primaryDoc2
+		  FOREIGN KEY (employeeid) REFERENCES {employees}(employeeid)
+		  ON UPDATE CASCADE
+		  ON DELETE CASCADE");
+	
+	db_query("INSERT INTO {patients} (ssn, firstName, middleInitial, lastName, address, city, state, zip, primaryPhone, secondaryPhone, emailAddress, gender, dob, maritalStatus)
+		VALUES
+		('123456789','Scott','','Sigalas','18F Hudson View Drive','Beacon','NY','12508','9144561944','8458313031','scott.sigalas1@marist.edu','M','1982-12-13','S'),
+		('987654321','Sherlock','','Holmes','221B Baker Street','London','NY','14378','6564398437','9072158723','elementary@watson.org','M','1876-8-31','M')");
+        
+	db_query("INSERT INTO {drugs} (drugname)
+VALUES
+('Albuterol Sulfate'),
+('Amoxicillin'),
+('Aspirin'),
+('Ativan'),
+('Augmentin'),
+('Azithromycin'),
+('Benadryl'),
+('Ceftin'),
+('Cipro'),
+('Demerol'),
+('Doxycycline'),
+('Flexeril'),
+('Hydrocodone'),
+('Ibuprofen'),
+('Insulin'),
+('Levaquin'),
+('Lithium'),
+('Lipitor'),
+('Morphine'),
+('Omeprazol'),
+('Penicillin'),
+('Phenergen'),
+('Prozac'),
+('Robaxin'),
+('Rocephin'),
+('Tetanus'),
+('Tylenol'),
+('Valium'),
+('Vancomycin')");
+
+	db_query("INSERT INTO {contraindications} (drugid1,drugid2)
+		VALUES
+		(1,10),
+		(3,5),
+		(18,2)");
+
+	for($i=1; $i<30; $i++)
+	{
+		db_query("INSERT INTO {maxDosage} (drugid, maxDose, units)
+			VALUES
+			(".$i.",1000,'mL')");
+	}
+
+	db_query("INSERT INTO {roles} (number, description)
+		VALUES
+		(1, 'SuperAdmin'),
+		(2, 'Medical Records Staff'),
+		(3, 'Doctor'),
+		(4, 'Receptionist'),
+		(5, 'Patient')");
+
+	db_query("INSERT INTO {patientMeds} (patientid, drugid, startDate)
+		VALUES
+		(1,27,'2010-10-20'),
+		(1,23,'2009-04-13'),
+		(2,14,'1954-06-19')");
+	
+	db_query("INSERT INTO {patientAllergies}(patientid,drugid) VALUES (2,2)");
+
+	db_query("INSERT INTO {employees} (ssn,firstName,middleInitial,lastName, address, city, state, zip, gender, maritalStatus, role)
+VALUES
+('147596814', 'James', 'Q', 'Strangelove', '90 Main St.', 'Poughkeepsie', 'NY', '12601', 'M', 'S', 1),
+('483011819', 'Mary', '' , 'Alexander', '157 North Rd.', 'Hyde Park', 'NY', '12590', 'F', 'M', 2),
+('614837553', 'Michael', 'J', 'Fox', '4753 Rt. 44', 'Pleasant Valley', 'NY', '12613', 'M', 'M', 3),
+('074319814', 'Diane', 'C', 'Hartigan', '182 Terrace Dr', 'Highland', 'NY', '12783', 'F', 'S', 3),
+('297140732', 'John', 'A', 'Smith', '27423 Cortlandt Ave', 'Peekskill', 'NY', '13170', 'M', 'S',3),
+('113297326', 'Charles', '', 'LaForge', '4A Curtain Way', 'Newburgh', 'NY', '12874', 'M', 'M',2),
+('582379104', 'Jane', '', 'Hawkins', '314 Pi Drive', 'New Paltz', 'NY', '12614', 'F', 'S',4),
+('631548925', 'Alistair', '', 'Quibly', '927 Locust Ave', 'Lloyd', 'NY', '12602', 'M', 'M',2),
+('452792571', 'Alyssa', 'G', 'DiStefano', '267 Grove Rd', 'Beacon', 'NY', '12508', 'F', 'M',2)");
+
+	db_query("INSERT INTO {emergencyContacts} (patientid, firstName, lastName, address, city, state, zip)
+VALUES
+(1, 'Julia', 'Gulia', '984 Terapin Way', 'New Paltz', 'NY', '12614'),
+(2, 'Barbara', 'Kerrigan', '3784 Cyclone Rd.', 'Millbrook', 'NY', '12561')");
+
+	db_query("INSERT INTO {primaryDoctor} (patientid, employeeid) VALUES (1,3),(2,3)");
+
+
+}
+
+	
+
+/**
+*  Implementation of hook_uninstall()
+*/
+function mhcpms_uninstall() {
+	// Remove the module from the system table
+	db_query("DELETE from {system} WHERE name = 'mhcpms'");
+
+	db_query("ALTER TABLE {primaryDoctor}
+		  DROP FOREIGN KEY primaryDoc2");
+
+	db_query("ALTER TABLE {primaryDoctor}
+		  DROP FOREIGN KEY primaryDoc1");
+
+	db_query("ALTER TABLE {pendingChanges}
+		  DROP FOREIGN KEY changes2");
+
+
+	db_query("ALTER TABLE {pendingChanges}
+		  DROP FOREIGN KEY changes1");
+
+	
+	db_query("ALTER TABLE {patientAllergies}
+		  DROP FOREIGN KEY allergy2");
+
+
+	db_query("ALTER TABLE {patientAllergies}
+		  DROP FOREIGN KEY allergy1");
+
+	
+	db_query("ALTER TABLE {maxDosage}
+		  DROP FOREIGN KEY maxDose");
+
+	
+	db_query("ALTER TABLE {contraindications}
+		  DROP FOREIGN KEY contra2");
+
+
+	db_query("ALTER TABLE {contraindications}
+		  DROP FOREIGN KEY contra1");
+
+	
+	db_query("ALTER TABLE {deceasedPatients}
+		  DROP FOREIGN KEY deceased");
+
+	
+	db_query("ALTER TABLE {patientMeds}
+		  DROP FOREIGN KEY meds2");
+
+
+	db_query("ALTER TABLE {patientMeds}
+		  DROP FOREIGN KEY meds1");
+
+	
+	db_query("ALTER TABLE {overrides}
+		  DROP FOREIGN KEY override");
+
+	
+	db_query("ALTER TABLE {prescriptions}
+		  DROP FOREIGN KEY rx3");
+
+	
+	db_query("ALTER TABLE {prescriptions}
+		  DROP FOREIGN KEY rx2");
+
+	
+	db_query("ALTER TABLE {prescriptions}
+		  DROP FOREIGN KEY rx1");
+	
+	
+	db_query("ALTER TABLE {employees}
+		  DROP FOREIGN KEY role");
+
+	
+	db_query("ALTER TABLE {emergencyContacts}
+		  DROP FOREIGN KEY contact");
+
+	db_query("DROP TABLE {primaryDoctor}");
+
+	db_query("DROP TABLE {roles}");
+
+	db_query("DROP TABLE {pendingChanges}");
+
+	db_query("DROP TABLE {maxDosage}");
+
+	db_query("DROP TABLE {patientAllergies}");
+
+	db_query("DROP TABLE {contraindications}");
+
+	db_query("DROP TABLE {patientMeds}");
+
+	db_query("DROP TABLE {overrides}");
+
+	db_query("DROP TABLE {prescriptions}");
+
+	db_query("DROP TABLE {drugs}");
+
+	db_query("DROP TABLE {emergencyContacts}");
+
+	db_query("DROP TABLE {employees}");
+
+	db_query("DROP TABLE {deceasedPatients}");
+
+	db_query("DROP TABLE {patients}");
+}
